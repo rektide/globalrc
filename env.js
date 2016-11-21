@@ -17,81 +17,22 @@ function env( name, opts){
 	var
 	  globalrcPath= Path.isAbsolute( name)? name: Path.join( configDir, name),
 	  pkgPath= Path.join( globalrcPath, "package.json"),
-	  deps= require( pkgPath).dependencies,
+	  pkgJson= require( pkgPath),
 	  properties= {},
 	  paths= {},
 	  modules= {},
 	  commonjs= [ "var "]
-	if( !deps){
-		var err= new Error( `Expected to find a '${pkgPath}'`)
-		err.path= pkgPath
-		throw err
-	}
-	for( var dep in deps){
+	for( var dep in pkgJson.dependencies){
 		var
 		  camelDep= camelCase(dep),
 		  path= Path.join( globalrcPath, "node_modules", dep),
-		  prop= (function( dep, path){
-			var val,
-			  notExist= function(){
-				return new Error( `Module '${dep}' should have had a value.`)
-			  },
-			  build= function(){
-				// fetch module
-				var mod= require( path)
+		  property= buildDependency( dep, camelDep, path, opts)
 
-				// set 'invisible' meta-data properties on the module's exports
-				if( mod._path){
-					var err= new Error( `'${dep}' already has '_path' property`)
-					err.dependency= dep
-					return err
-				}
-				if( mod._name){
-					var err= new Error( `'${dep}' already has '_name' property`)
-					err.dependency= dep
-					return err
-				}
-				Object.defineProperties( mod, {
-					_path: {
-						value: path,
-						enumerable: false
-					},
-					_name: {
-						value: dep,
-						enumerable: false
-					}
-				})
+		// install dependency camelcase
+		properties[ camelDep]= property
 
-				// return
-				return mod
-			  },
-			  getter= function(){
-				return val
-			  },
-			  builder= function(){
-				val= build()
-				if( !val){
-					throw notExist()
-				}
-				builder= getter
-				return val
-			  },
-			  get= function(){
-				return builder()
-			  },
-			  prop= Object.assign( {}, opts, {
-				get,
-				enumerable: true,
-				configurable: true
-			  })
-
-			// build text
-			commonjs.push( commonjs.length > 1? ", ": "", camelDep, "= require('", path, "')")
-
-			return prop
-		  })( dep, path)
-		// camelcase dependency
-		properties[ camelDep]= prop
+		// build text
+		commonjs.push( commonjs.length > 1? ", ": "", camelDep, "= require('", path, "')")
 	}
 	commonjs= commonjs.concat( ";").join( "")
 	properties._commonjs= {
@@ -104,6 +45,73 @@ function env( name, opts){
 	}
 	Object.defineProperties( modules, properties)
 	return modules
+}
+
+function buildDependency( name, camelName, path, opts){
+	var val,
+	  notExist= function(){
+		var err= Error( `Module '${name}' should have had a value.`)
+		err.moduleName= name
+		return err
+	  },
+	  build= function(){
+		// fetch module
+		var mod= require( path)
+
+		// verify we have a module
+		if( !val){
+			throw notExist()
+		}
+
+		// set 'invisible' meta-data properties on the module's exports
+		if( mod._name){
+			var err= new Error( `'${dep}' already has '_name' property`)
+			err.moduleName= dep
+			err.alreadyHas= "_name"
+			return err
+		}
+		if( mod._name){
+			var err= new Error( `'${dep}' already has '_camelName' property`)
+			err.moduleName= dep
+			err.alreadyHas= "_camelName"
+			return err
+		}
+		if( mod._path){
+			var err= new Error( `'${dep}' already has '_path' property`)
+			err.moduleName= dep
+			err.alreadyHas= "_path"
+			return err
+		}
+		Object.defineProperties( mod, {
+			_path: {
+				value: path
+			},
+			_name: {
+				value: dep
+			},
+			_camelName: {
+				value: camelName
+			}
+		})
+
+		// install shortcut getter, releasing this function
+		build= getter
+
+		// return
+		return mod
+	  },
+	  getter= function(){
+		return val
+	  },
+	  get= function(){
+		return build()
+	  },
+	  property= Object.assign( {}, opts, {
+		get,
+		enumerable: true,
+		configurable: true
+	  })
+	return property
 }
 
 module.exports= env
