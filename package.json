@@ -1,0 +1,20 @@
+{
+	"name": "globalrc",
+	"version": "1.0.0",
+	"description": "A plugin-architecture assistant for importing externally defined modules from a well-defined/xdg-compliant place.",
+	"main": "globalrc.js",
+	"scripts": {
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://archive.eldergods.com/globalrc"
+	},
+	"keywords": [],
+	"author": "rektide de la faye",
+	"license": "X11",
+	"dependencies": {
+		"camelcase": "^4.0.0",
+		"global": "^4.3.1",
+		"xdg-basedir": "^2.0.0"
+	}
+}
