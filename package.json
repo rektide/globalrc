@@ -1,6 +1,6 @@
 {
 	"name": "globalrc",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "A plugin-architecture assistant for importing externally defined modules from a well-defined/xdg-compliant place.",
 	"main": "globalrc.js",
 	"scripts": {

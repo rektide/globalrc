@@ -15,5 +15,9 @@ function main( globalrc){
 	return names
 }
 
+if( require.main=== main){
+	main()
+}
+
 module.exports= main
 module.exports.main= main

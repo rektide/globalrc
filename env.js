@@ -5,50 +5,97 @@ var
   Path= require( "path"),
   xdgBasedir= require( "xdg-basedir")
 
-var configDir= xdgBasedir.config
 var props= [ "configurable", "enumerable"]
 
 /**
  * Create an object with getters for the specified or default environment
  */
-function env( name, opts){
-	name= name|| "globalrc"
+function env( opts){
+	// env initialization
 	opts= opts|| {}
 	var
-	  globalrcPath= Path.isAbsolute( name)? name: Path.join( configDir, name),
-	  pkgPath= Path.join( globalrcPath, "package.json"),
-	  pkgJson= require( pkgPath),
+	  // globalrc config to look for, path to it
+	  name= opts.name|| process.env.GLOBALRC|| "globalrc",
+	  dir= Path.isAbsolute( name)? name: Path.join( xdgBasedir.config, name),
+	  // result gets these properties defined on it
 	  properties= {},
-	  paths= {},
-	  modules= {},
+	  // variable declaration text that pulls in all properties
 	  commonjs= [ "var "]
-	for( var dep in pkgJson.dependencies){
-		var
-		  camelDep= camelCase(dep),
-		  path= Path.join( globalrcPath, "node_modules", dep),
-		  property= buildDependency( dep, camelDep, path, opts)
+
+	function add( name, path){
+		var property= buildProperty( dep, path, opts)
+		if( !property){
+			return
+		}
+		var camel= property.camel
 
 		// install dependency camelcase
-		properties[ camelDep]= property
+		properties[ camel]= property
 
 		// build text
-		commonjs.push( commonjs.length > 1? ", ": "", camelDep, "= require('", path, "')")
+		commonjs.push( commonjs.length > 1? ", ": "", camel, "= require('", path, "')")
 	}
+	function tryAdd( name, path){
+		try{
+			require( path)
+			add( name, path)
+			return true
+		}catch(ex){
+			return false
+		}
+	}
+
+	// at the lowest precedence of imports, globalrc exposes all dependencies - it's the simplest use of globalrc, pulling in libraries
+	var
+	  pkgPath= Path.join( dir, "package.json"),
+	  pkgJson= require( pkgPath)
+	for( var dep in pkgJson.dependencies){
+		var path= Path.join( dir, "node_modules", dep)
+		add( dep, path)
+	}
+
+	// next, pull in the special globalrc file
+	var
+	  foundGlobalrcJs= false,
+	  globalrc= Path.join( dir, "globalrc.js"),
+	  globalrcHidden= Path.join( dir, ".globalrc.js"),
+	  globalFiles= [ globalrc, globalrcHidden]
+	for( var i in globalFiles){
+		var
+		  file= globalFiles[ i],
+		  added= tryAdd( "globalrc", file)
+		if( added){
+			foundGlobalrcJs= true
+		}
+	}
+
+	// if there is no globalrc.js file, import the top level exports of the moduel
+	if( !foundGlobalrcJs){
+		tryAdd( "globalrc", dir)
+	}
+
+	// build synthetic props
+	// synthetic property that generates a string that would create variable declarations for everything in globalrc
 	commonjs= commonjs.concat( ";").join( "")
 	properties._commonjs= {
 		value: commonjs
 	}
+	// add everything in globalrc into the global object (whether that's window, global, self, root)
 	properties._globalize= {
 		value: function(){
 			return require( "./globalize")( modules)
 		}
 	}
+
+	// resultant set of exposed things
+	var modules= {}
 	Object.defineProperties( modules, properties)
 	return modules
 }
 
-function buildDependency( name, camelName, path, opts){
+function buildProperty( name, path, opts){
 	var val,
+	  camel= camelCase(name),
 	  notExist= function(){
 		var err= Error( `Module '${name}' should have had a value.`)
 		err.moduleName= name
@@ -56,7 +103,7 @@ function buildDependency( name, camelName, path, opts){
 	  },
 	  build= function(){
 		// fetch module
-		var mod= require( path)
+		val= require( path)
 
 		// verify we have a module
 		if( !val){
@@ -64,33 +111,34 @@ function buildDependency( name, camelName, path, opts){
 		}
 
 		// set 'invisible' meta-data properties on the module's exports
-		if( mod._name){
+		if( val._name){
 			var err= new Error( `'${dep}' already has '_name' property`)
 			err.moduleName= dep
 			err.alreadyHas= "_name"
-			return err
+			throw err
 		}
-		if( mod._name){
-			var err= new Error( `'${dep}' already has '_camelName' property`)
+
+		if( val._name){
+			var err= new Error( `'${dep}' already has '_camel' property`)
 			err.moduleName= dep
-			err.alreadyHas= "_camelName"
-			return err
+			err.alreadyHas= "_camel"
+			throw err
 		}
-		if( mod._path){
+		if( val._path){
 			var err= new Error( `'${dep}' already has '_path' property`)
 			err.moduleName= dep
 			err.alreadyHas= "_path"
-			return err
+			throw err
 		}
-		Object.defineProperties( mod, {
+		Object.defineProperties( val, {
 			_path: {
 				value: path
 			},
 			_name: {
-				value: dep
+				value: name
 			},
-			_camelName: {
-				value: camelName
+			_camel: {
+				value: camel
 			}
 		})
 
@@ -98,7 +146,7 @@ function buildDependency( name, camelName, path, opts){
 		build= getter
 
 		// return
-		return mod
+		return val
 	  },
 	  getter= function(){
 		return val
@@ -108,6 +156,7 @@ function buildDependency( name, camelName, path, opts){
 	  },
 	  property= Object.assign( {}, opts, {
 		get,
+		camel,
 		enumerable: true,
 		configurable: true
 	  })
